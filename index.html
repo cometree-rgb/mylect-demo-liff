@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mylect eyes</title>
+
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+      background: #f7f7f5;
+      color: #1f2933;
+    }
+
+    .wrap {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 420px;
+      background: #ffffff;
+      border-radius: 20px;
+      padding: 28px 24px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.08);
+      text-align: center;
+    }
+
+    .logo {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      margin-bottom: 8px;
+    }
+
+    .title {
+      font-size: 18px;
+      font-weight: 700;
+      margin: 16px 0 8px;
+    }
+
+    .text {
+      font-size: 14px;
+      line-height: 1.8;
+      color: #52606d;
+      margin: 0;
+    }
+
+    .status {
+      margin-top: 20px;
+      font-size: 13px;
+      color: #7b8794;
+      word-break: break-all;
+    }
+
+    .button {
+      display: none;
+      width: 100%;
+      margin-top: 20px;
+      padding: 14px 16px;
+      border-radius: 999px;
+      border: none;
+      background: #111827;
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .button.show {
+      display: block;
+    }
+
+    .error {
+      margin-top: 20px;
+      color: #b42318;
+      font-size: 13px;
+      line-height: 1.7;
+      text-align: left;
+      background: #fff1f0;
+      border-radius: 12px;
+      padding: 12px;
+      word-break: break-all;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="logo">Mylect eyes</div>
+
+      <div class="title" id="title">フォームを準備しています</div>
+
+      <p class="text" id="message">
+        LINEアカウントとフォームを安全に連携しています。数秒お待ちください。
+      </p>
+
+      <div class="status" id="status">Initializing...</div>
+
+      <button class="button" id="openButton">フォームを開く</button>
+
+      <div id="errorBox"></div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * =========================
+     * Mylect LIFF Config
+     * =========================
+     */
+
+    // 1. LINE Developersで発行されたLIFF IDに差し替え
+    const LIFF_ID = 'YOUR_LIFF_ID_HERE';
+
+    // 2. GoogleフォームのプレフィルURLに差し替え
+    //    entry.xxxxx=__USERID__ の形にしておく
+    const FORM_URLS = {
+      basic: 'https://docs.google.com/forms/d/e/YOUR_BASIC_FORM_ID/viewform?usp=pp_url&entry.XXXXXXXX=__USERID__',
+      check: 'https://docs.google.com/forms/d/e/YOUR_CHECK_FORM_ID/viewform?usp=pp_url&entry.YYYYYYYY=__USERID__'
+    };
+
+    /**
+     * URL例:
+     * 基本情報フォーム:
+     * https://xxxx.github.io/mylect-liff/?type=basic
+     *
+     * 日時チェックフォーム:
+     * https://xxxx.github.io/mylect-liff/?type=check
+     */
+
+    const params = new URLSearchParams(window.location.search);
+    const type = params.get('type') || 'basic';
+
+    const titleEl = document.getElementById('title');
+    const messageEl = document.getElementById('message');
+    const statusEl = document.getElementById('status');
+    const buttonEl = document.getElementById('openButton');
+    const errorBoxEl = document.getElementById('errorBox');
+
+    let finalFormUrl = '';
+
+    function setStatus(text) {
+      statusEl.textContent = text;
+    }
+
+    function showError(message) {
+      errorBoxEl.innerHTML = `<div class="error">${escapeHtml(message)}</div>`;
+      setStatus('Error');
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    function getTargetFormUrl(formType) {
+      if (formType === 'basic') return FORM_URLS.basic;
+      if (formType === 'check') return FORM_URLS.check;
+      return null;
+    }
+
+    function buildFormUrl(baseUrl, userId) {
+      if (!baseUrl || !baseUrl.includes('__USERID__')) {
+        throw new Error('フォームURLに __USERID__ が含まれていません。プレフィルURLを確認してください。');
+      }
+
+      return baseUrl.replace('__USERID__', encodeURIComponent(userId));
+    }
+
+    function openForm(url) {
+      // LINEアプリ内では外部ブラウザではなくLIFF内で開く
+      if (window.liff && liff.isInClient()) {
+        liff.openWindow({
+          url,
+          external: false
+        });
+      } else {
+        window.location.href = url;
+      }
+    }
+
+    async function main() {
+      try {
+        const targetFormUrl = getTargetFormUrl(type);
+
+        if (!targetFormUrl) {
+          throw new Error(`不明なフォーム種別です: ${type}。type=basic または type=check を指定してください。`);
+        }
+
+        if (type === 'basic') {
+          titleEl.textContent = '基本情報フォームを開きます';
+          messageEl.textContent = 'あなたのLINE IDをフォームに自動入力して、基本情報フォームへ移動します。';
+        }
+
+        if (type === 'check') {
+          titleEl.textContent = '日時チェックフォームを開きます';
+          messageEl.textContent = 'あなたのLINE IDをフォームに自動入力して、日時チェックフォームへ移動します。';
+        }
+
+        setStatus('LIFFを初期化しています...');
+
+        if (!LIFF_ID || LIFF_ID === 'YOUR_LIFF_ID_HERE') {
+          throw new Error('LIFF_ID が未設定です。index.html の LIFF_ID を差し替えてください。');
+        }
+
+        await liff.init({ liffId: LIFF_ID });
+
+        setStatus('ログイン状態を確認しています...');
+
+        if (!liff.isLoggedIn()) {
+          liff.login({
+            redirectUri: window.location.href
+          });
+          return;
+        }
+
+        setStatus('LINEプロフィールを取得しています...');
+
+        const profile = await liff.getProfile();
+
+        if (!profile || !profile.userId) {
+          throw new Error('LINE userId を取得できませんでした。LIFF設定を確認してください。');
+        }
+
+        finalFormUrl = buildFormUrl(targetFormUrl, profile.userId);
+
+        setStatus(`連携完了: ${profile.displayName || 'LINEユーザー'}`);
+
+        buttonEl.classList.add('show');
+        buttonEl.onclick = () => openForm(finalFormUrl);
+
+        // 自動遷移
+        setTimeout(() => {
+          openForm(finalFormUrl);
+        }, 700);
+
+      } catch (err) {
+        console.error(err);
+        showError(err && err.message ? err.message : String(err));
+      }
+    }
+
+    main();
+  </script>
+</body>
+</html>
